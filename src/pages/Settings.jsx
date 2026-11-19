@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { message, Spin, Popconfirm } from 'antd';
-import { UserOutlined, LockOutlined, EyeOutlined, EyeInvisibleOutlined, SettingOutlined, CheckCircleOutlined, UserAddOutlined, DeleteOutlined, TeamOutlined } from '@ant-design/icons';
-
+import { User, Lock, Eye, EyeOff, Settings as SettingsIcon, CheckCircle, UserPlus, Trash2, Users, AtSign, Smartphone, Save } from 'lucide-react';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 // ── Defined OUTSIDE Settings to prevent focus loss on re-render ──────────────
@@ -23,7 +22,7 @@ function PasswordInput({ value, onChange, placeholder }) {
   const [show, setShow] = useState(false);
   return (
     <div className='field-wrap'>
-      <span className='field-icon'><LockOutlined /></span>
+      <span className='field-icon'><Lock size={15}/></span>
       <input
         type={show ? 'text' : 'password'}
         value={value}
@@ -38,7 +37,7 @@ function PasswordInput({ value, onChange, placeholder }) {
         onClick={() => setShow(s => !s)}
         style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: 16, padding: 0, display: 'flex', alignItems: 'center' }}
       >
-        {show ? <EyeInvisibleOutlined /> : <EyeOutlined />}
+        {show ? <EyeOff size={16}/> : <Eye size={16}/>}
       </button>
     </div>
   );
@@ -151,6 +150,20 @@ function Settings({ user, onUserUpdate }) {
     }
   };
 
+  // ── UPI Settings ─────────────────────────────────────────
+  const [upiId,     setUpiId]     = useState(() => localStorage.getItem('upi_id')     || '');
+  const [upiName,   setUpiName]   = useState(() => localStorage.getItem('upi_name')   || '');
+  const [upiSaved,  setUpiSaved]  = useState(false);
+
+  const saveUpi = () => {
+    if (!upiId.trim()) { message.warning('UPI ID required'); return; }
+    localStorage.setItem('upi_id',   upiId.trim());
+    localStorage.setItem('upi_name', upiName.trim());
+    setUpiSaved(true);
+    setTimeout(() => setUpiSaved(false), 3000);
+    message.success('UPI settings saved!');
+  };
+
   // ── New user state ───────────────────────────────────────
   const [newUserName,  setNewUserName]  = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
@@ -238,8 +251,8 @@ function Settings({ user, onUserUpdate }) {
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 28 }}>
-        <div className='icon-badge' style={{ background: 'linear-gradient(135deg,#667eea,#764ba2)', width: 48, height: 48, borderRadius: 14, fontSize: 22 }}>
-          <SettingOutlined />
+        <div className='icon-badge' style={{ background: 'linear-gradient(135deg,#667eea,#764ba2)', width: 48, height: 48, borderRadius: 14, fontSize: 22, display:'flex',alignItems:'center',justifyContent:'center' }}>
+          <SettingsIcon size={22} color="#fff"/>
         </div>
         <div>
           <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: 'var(--text)', fontFamily: 'Raleway, sans-serif' }}>Account Settings</h2>
@@ -249,12 +262,11 @@ function Settings({ user, onUserUpdate }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 24 }}>
 
-        {/* ── Change Username Card ─────────────────────────── */}
-        <div className='card'>
+        {/* ── Change Username Card ─────────────────────────── */}        <div className='card'>
           <div className='card-header'>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div className='icon-badge' style={{ background: 'linear-gradient(135deg,#4d96ff,#1e90ff)', width: 38, height: 38, borderRadius: 11, fontSize: 17 }}>
-                <UserOutlined />
+              <div className='icon-badge' style={{ background: 'linear-gradient(135deg,#4d96ff,#1e90ff)', width: 38, height: 38, borderRadius: 11, display:'flex',alignItems:'center',justifyContent:'center' }}>
+                <User size={17} color="#fff"/>
               </div>
               <div>
                 <div className='card-title'>Change Username</div>
@@ -265,7 +277,7 @@ function Settings({ user, onUserUpdate }) {
           <div className='card-body'>
             <F label='New Username' err={usernameErr.newUsername}>
               <div className='field-wrap'>
-                <span className='field-icon'><UserOutlined /></span>
+                <span className='field-icon'><User size={15}/></span>
                 <input
                   type='text'
                   value={newUsername}
@@ -295,7 +307,7 @@ function Settings({ user, onUserUpdate }) {
                 opacity: savingUser ? 0.7 : 1, transition: 'all .3s', boxShadow: '0 4px 14px rgba(77,150,255,.35)',
               }}
             >
-              {savingUser ? <Spin size='small' /> : userDone ? <><CheckCircleOutlined /> Username Updated!</> : 'Update Username'}
+              {savingUser ? <Spin size='small' /> : userDone ? <><CheckCircle size={16}/> Username Updated!</> : 'Update Username'}
             </button>
           </div>
         </div>
@@ -304,8 +316,8 @@ function Settings({ user, onUserUpdate }) {
         <div className='card'>
           <div className='card-header'>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div className='icon-badge' style={{ background: 'linear-gradient(135deg,#f59e0b,#ef4444)', width: 38, height: 38, borderRadius: 11, fontSize: 17 }}>
-                <LockOutlined />
+              <div className='icon-badge' style={{ background: 'linear-gradient(135deg,#f59e0b,#ef4444)', width: 38, height: 38, borderRadius: 11, display:'flex',alignItems:'center',justifyContent:'center' }}>
+                <Lock size={17} color="#fff"/>
               </div>
               <div>
                 <div className='card-title'>Change Password</div>
@@ -361,7 +373,7 @@ function Settings({ user, onUserUpdate }) {
                 opacity: savingPwd ? 0.7 : 1, transition: 'all .3s', boxShadow: '0 4px 14px rgba(245,158,11,.35)',
               }}
             >
-              {savingPwd ? <Spin size='small' /> : pwdDone ? <><CheckCircleOutlined /> Password Updated!</> : 'Update Password'}
+              {savingPwd ? <Spin size='small' /> : pwdDone ? <><CheckCircle size={16}/> Password Updated!</> : 'Update Password'}
             </button>
           </div>
         </div>
@@ -371,12 +383,72 @@ function Settings({ user, onUserUpdate }) {
       {/* ── Create New User + Users List (full width below) ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 24, marginTop: 24 }}>
 
+        {/* ── UPI Settings Card ────────────────────────────── */}
+        <div className='card'>
+          <div className='card-header'>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div className='icon-badge' style={{ background: 'linear-gradient(135deg,#6c63ff,#4d96ff)', width: 38, height: 38, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>
+                📱
+              </div>
+              <div>
+                <div className='card-title'>UPI Settings</div>
+                <div className='card-sub'>Used for QR code on billing screen</div>
+              </div>
+            </div>
+          </div>
+          <div className='card-body'>
+            <F label='UPI ID *'>
+              <div className='field-wrap'>
+                <span className='field-icon' style={{ fontSize: 14, fontWeight: 700, color: '#6c63ff' }}>@</span>
+                <input
+                  type='text'
+                  value={upiId}
+                  onChange={e => setUpiId(e.target.value)}
+                  placeholder='e.g. 9414736848@paytm'
+                  className='field-input'
+                  autoComplete='off'
+                />
+              </div>
+            </F>
+            <F label='Account Holder Name'>
+              <div className='field-wrap'>
+                <span className='field-icon'><User size={15}/></span>
+                <input
+                  type='text'
+                  value={upiName}
+                  onChange={e => setUpiName(e.target.value)}
+                  placeholder='e.g. Look @ me Store'
+                  className='field-input'
+                  autoComplete='off'
+                />
+              </div>
+            </F>
+            {upiId && (
+              <div style={{ marginBottom: 14, padding: '10px 14px', background: 'rgba(108,99,255,.06)', borderRadius: 10, border: '1.5px solid rgba(108,99,255,.2)', fontSize: 13, color: '#6c63ff', fontWeight: 600, fontFamily: 'monospace' }}>
+                📲 {upiId}{upiName ? ` · ${upiName}` : ''}
+              </div>
+            )}
+            <button
+              onClick={saveUpi}
+              style={{
+                width: '100%', padding: '12px 0', borderRadius: 12, border: 'none',
+                background: upiSaved ? 'linear-gradient(135deg,#56ab2f,#a8e063)' : 'linear-gradient(135deg,#6c63ff,#4d96ff)',
+                color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer',
+                fontFamily: 'Raleway, sans-serif', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                transition: 'all .3s', boxShadow: '0 4px 14px rgba(108,99,255,.3)',
+              }}
+            >
+              {upiSaved ? <><CheckCircle size={16}/> Saved!</> : '💾 Save UPI Settings'}
+            </button>
+          </div>
+        </div>
+
         {/* ── Create New User Card ─────────────────────────── */}
         <div className='card'>
           <div className='card-header'>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div className='icon-badge' style={{ background: 'linear-gradient(135deg,#52c97a,#56ab2f)', width: 38, height: 38, borderRadius: 11, fontSize: 17 }}>
-                <UserAddOutlined />
+              <div className='icon-badge' style={{ background: 'linear-gradient(135deg,#52c97a,#56ab2f)', width: 38, height: 38, borderRadius: 11, display:'flex',alignItems:'center',justifyContent:'center' }}>
+                <UserPlus size={17} color="#fff"/>
               </div>
               <div>
                 <div className='card-title'>Create New User</div>
@@ -387,7 +459,7 @@ function Settings({ user, onUserUpdate }) {
           <div className='card-body'>
             <F label='Username *' err={newUserErr.newUserName}>
               <div className='field-wrap'>
-                <span className='field-icon'><UserOutlined /></span>
+                <span className='field-icon'><User size={15}/></span>
                 <input
                   type='text'
                   value={newUserName}
@@ -430,7 +502,7 @@ function Settings({ user, onUserUpdate }) {
                 opacity: savingNew ? 0.7 : 1, transition: 'all .3s', boxShadow: '0 4px 14px rgba(82,201,122,.35)',
               }}
             >
-              {savingNew ? <Spin size='small' /> : newUserDone ? <><CheckCircleOutlined /> User Created!</> : <><UserAddOutlined /> Create User</>}
+              {savingNew ? <Spin size='small' /> : newUserDone ? <><CheckCircle size={16}/> User Created!</> : <><UserPlus size={16}/> Create User</>}
             </button>
           </div>
         </div>
@@ -439,8 +511,8 @@ function Settings({ user, onUserUpdate }) {
         <div className='card'>
           <div className='card-header'>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div className='icon-badge' style={{ background: 'linear-gradient(135deg,#667eea,#764ba2)', width: 38, height: 38, borderRadius: 11, fontSize: 17 }}>
-                <TeamOutlined />
+              <div className='icon-badge' style={{ background: 'linear-gradient(135deg,#667eea,#764ba2)', width: 38, height: 38, borderRadius: 11, display:'flex',alignItems:'center',justifyContent:'center' }}>
+                <Users size={17} color="#fff"/>
               </div>
               <div>
                 <div className='card-title'>All Users</div>
@@ -477,7 +549,7 @@ function Settings({ user, onUserUpdate }) {
                         <button style={{ width: 30, height: 30, borderRadius: 8, border: '1.5px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444', fontSize: 13, flexShrink: 0 }}
                           onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,.08)'; e.currentTarget.style.borderColor = '#ef4444'; }}
                           onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = 'var(--border)'; }}>
-                          <DeleteOutlined />
+                          <Trash2 size={14}/>
                         </button>
                       </Popconfirm>
                     )}

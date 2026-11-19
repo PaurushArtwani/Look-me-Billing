@@ -1,9 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { message, Spin, Table, Button, Modal, Empty, Input, Select, Popconfirm } from 'antd';
-import { FilePdfOutlined, EyeOutlined, SearchOutlined, DownloadOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { FileDown, Eye, Search, Download, FilePen, Trash2, CalendarDays, MessageSquareText, Printer } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+// ── Fix 6: colorName helper ──────────────────────────────────
+const COLOR_NAMES = {
+  '#ff4d4f':'Red','#ff0000':'Red','#e53935':'Red','#ff7a45':'Orange Red','#ff9800':'Orange',
+  '#ffd93d':'Yellow','#ffeb3b':'Yellow','#52c97a':'Green','#4caf50':'Green','#56ab2f':'Lime Green',
+  '#4d96ff':'Blue','#2196f3':'Blue','#1e90ff':'Dodger Blue','#6c63ff':'Purple','#9c27b0':'Violet',
+  '#764ba2':'Plum','#667eea':'Lavender','#e91e63':'Pink','#ff69b4':'Hot Pink',
+  '#000000':'Black','#ffffff':'White','#9e9e9e':'Grey','#8b4513':'Brown',
+  '#795548':'Dark Brown','#d2691e':'Chocolate','#00bcd4':'Cyan','#009688':'Teal',
+  '#ffb300':'Gold','#ffc107':'Amber','#f59e0b':'Amber','#333333':'Dark Grey',
+};
+const colorName = (hex) => {
+  if (!hex) return '';
+  const h = hex.toLowerCase().trim();
+  return COLOR_NAMES[h] || h.replace('#', '').toUpperCase();
+};
 
 const PAY_COLORS = {
   Cash:   { color: '#52c97a', bg: 'rgba(82,201,122,0.12)' },
@@ -24,6 +40,7 @@ function Records() {
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [showDetails,     setShowDetails]     = useState(false);
   const [search,          setSearch]          = useState('');
+  const [dateRange,       setDateRange]       = useState('month'); // today | week | month | all
 
   // Edit invoice state
   const [showEdit,   setShowEdit]   = useState(false);
@@ -31,17 +48,33 @@ function Records() {
   const [editErrors, setEditErrors] = useState({});
   const [saving,     setSaving]     = useState(false);
 
+  // Date range helper
+  const getStartDate = (range) => {
+    const now = new Date();
+    if (range === 'today') { const d = new Date(now); d.setHours(0,0,0,0); return d; }
+    if (range === 'week')  { const d = new Date(now); d.setDate(d.getDate() - 6); d.setHours(0,0,0,0); return d; }
+    if (range === 'month') { const d = new Date(now); d.setDate(d.getDate() - 29); d.setHours(0,0,0,0); return d; }
+    return null; // 'all'
+  };
+
   useEffect(() => { fetchInvoices(); }, []);
 
   useEffect(() => {
-    if (!search.trim()) { setFiltered(invoices); return; }
-    const q = search.toLowerCase();
-    setFiltered(invoices.filter(inv =>
-      inv.invoice_number?.toLowerCase().includes(q) ||
-      inv.customer_name?.toLowerCase().includes(q) ||
-      inv.payment_method?.toLowerCase().includes(q)
-    ));
-  }, [search, invoices]);
+    let list = invoices;
+    // Apply date filter
+    const start = getStartDate(dateRange);
+    if (start) list = list.filter(inv => new Date(inv.created_at) >= start);
+    // Apply search
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(inv =>
+        inv.invoice_number?.toLowerCase().includes(q) ||
+        inv.customer_name?.toLowerCase().includes(q) ||
+        inv.payment_method?.toLowerCase().includes(q)
+      );
+    }
+    setFiltered(list);
+  }, [search, invoices, dateRange]);
 
   const fetchInvoices = async () => {
     try {
@@ -117,6 +150,38 @@ function Records() {
     } catch { message.error('Failed to delete invoice'); }
   };
 
+  // ── WhatsApp Send ─────────────────────────────────────────
+  const sendWhatsApp = async (record) => {
+    const raw = (record.customer_phone || '').replace(/[\s\-()]/g, '').replace(/^\+/, '');
+    const phone = raw ? (raw.startsWith('91') && raw.length === 12 ? raw : '91' + raw.replace(/^0/, '')) : '';
+
+    const date = new Date(record.created_at).toLocaleDateString('en-IN', {
+      day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata'
+    });
+
+    if (!phone) {
+      message.warning('No phone number found for this customer!');
+      return;
+    }
+
+    const msg =
+`Hello ${record.customer_name}! 👋
+
+Your invoice from *Look @ me* is ready.
+
+🧾 *Invoice:* ${record.invoice_number}
+💰 *Amount:* ₹${record.total_amount?.toLocaleString('en-IN')}
+💳 *Payment:* ${record.payment_method}
+📅 *Date:* ${date}
+
+Thank you for your business! 🙏
+— Look @ me, Sindhi Bazar, Udaipur`;
+
+    const encoded = encodeURIComponent(msg);
+    const url = `https://wa.me/${phone}?text=${encoded}`;
+    window.open(url, '_blank');
+  };
+
   const totalRevenue = filtered.reduce((s, inv) => s + (inv.total_amount || 0), 0);
 
   const btnStyle = (bg, color) => ({
@@ -150,6 +215,15 @@ function Records() {
       title: 'Payment', dataIndex: 'payment_method', key: 'payment_method',
       render: m => { const c = PAY_COLORS[m] || { color: '#9ca3af', bg: '#f3f4f6' }; return <span style={{ background: c.bg, color: c.color, padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 700, fontFamily: 'Raleway, sans-serif' }}>{m}</span>; },
     },
+    // ── Fix 5: Status column ──
+    {
+      title: 'Status',
+      dataIndex: 'status',
+      key: 'status',
+      render: s => s === 'unpaid'
+        ? <span style={{ background: 'rgba(239,68,68,.1)', color: '#ef4444', padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 700 }}>❌ Unpaid</span>
+        : <span style={{ background: 'rgba(82,201,122,.1)', color: '#52c97a', padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 700 }}>✅ Paid</span>,
+    },
     {
       title: 'Date', dataIndex: 'created_at', key: 'created_at',
       render: d => (
@@ -167,17 +241,23 @@ function Records() {
           <button onClick={() => viewDetails(record.id)} style={btnStyle('rgba(108,99,255,0.1)', 'var(--primary)')}
             onMouseEnter={e => e.currentTarget.style.background = 'rgba(108,99,255,0.2)'}
             onMouseLeave={e => e.currentTarget.style.background = 'rgba(108,99,255,0.1)'}>
-            <EyeOutlined /> View
+            <Eye size={13}/> View
           </button>
           <button onClick={() => downloadPDF(record.id)} style={btnStyle('rgba(255,107,107,0.1)', 'var(--red)')}
             onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,107,107,0.2)'}
             onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,107,107,0.1)'}>
-            <FilePdfOutlined /> PDF
+            <FileDown size={13}/> PDF
           </button>
           <button onClick={() => openEdit(record)} style={btnStyle('rgba(245,158,11,0.1)', '#f59e0b')}
             onMouseEnter={e => e.currentTarget.style.background = 'rgba(245,158,11,0.2)'}
             onMouseLeave={e => e.currentTarget.style.background = 'rgba(245,158,11,0.1)'}>
-            <EditOutlined /> Edit
+            <FilePen size={13}/> Edit
+          </button>
+          <button onClick={() => sendWhatsApp(record)} style={btnStyle('rgba(37,211,102,0.1)', '#25d366')}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(37,211,102,0.2)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'rgba(37,211,102,0.1)'}
+            title={record.customer_phone ? `Send to ${record.customer_phone}` : 'No phone number'}>
+            <MessageSquareText size={13}/> Send
           </button>
           <Popconfirm
             title="Delete this invoice?"
@@ -188,7 +268,7 @@ function Records() {
             <button style={btnStyle('rgba(255,77,79,0.1)', '#ff4d4f')}
               onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,77,79,0.2)'}
               onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,77,79,0.1)'}>
-              <DeleteOutlined /> Delete
+              <Trash2 size={13}/> Delete
             </button>
           </Popconfirm>
         </div>
@@ -213,27 +293,149 @@ function Records() {
       {/* Summary Cards */}
       <div className="records-stats">
         {[
-          { label: 'Total Invoices',   value: filtered.length,                                                         icon: '📄', bg: 'rgba(108,99,255,0.1)' },
-          { label: 'Total Revenue',    value: `₹${totalRevenue.toLocaleString('en-IN')}`,                              icon: '💰', bg: 'rgba(82,201,122,0.1)' },
-          { label: 'Cash Payments',    value: filtered.filter(i => i.payment_method === 'Cash').length,                icon: '💵', bg: 'rgba(245,158,11,0.1)' },
-          { label: 'Digital Payments', value: filtered.filter(i => ['Card','UPI'].includes(i.payment_method)).length,  icon: '📱', bg: 'rgba(77,150,255,0.1)' },
+          {
+            label: 'Total Invoices',
+            value: filtered.length,
+            icon: (
+              <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
+                <rect x="4" y="2" width="14" height="18" rx="2" fill="#6c63ff"/>
+                <rect x="4" y="2" width="14" height="18" rx="2" fill="url(#inv_grad)"/>
+                <rect x="6" y="6" width="8" height="1.5" rx=".75" fill="white" fillOpacity=".9"/>
+                <rect x="6" y="9" width="10" height="1.5" rx=".75" fill="white" fillOpacity=".7"/>
+                <rect x="6" y="12" width="7" height="1.5" rx=".75" fill="white" fillOpacity=".7"/>
+                <rect x="6" y="15" width="9" height="1.5" rx=".75" fill="white" fillOpacity=".5"/>
+                <path d="M16 20l2-2 2 2v-6h-4v6z" fill="#f59e0b"/>
+                <defs>
+                  <linearGradient id="inv_grad" x1="4" y1="2" x2="18" y2="20" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#667eea"/><stop offset="1" stopColor="#764ba2"/>
+                  </linearGradient>
+                </defs>
+              </svg>
+            ),
+            bg: 'rgba(108,99,255,0.1)', color: '#6c63ff',
+          },
+          {
+            label: 'Total Revenue',
+            value: `₹${totalRevenue.toLocaleString('en-IN')}`,
+            icon: (
+              <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
+                <circle cx="13" cy="13" r="11" fill="url(#rev_grad)"/>
+                <circle cx="13" cy="13" r="11" fill="url(#rev_grad)"/>
+                <text x="13" y="17.5" textAnchor="middle" fontSize="13" fontWeight="bold" fill="white" fontFamily="Arial">₹</text>
+                <circle cx="13" cy="7" r="2.5" fill="#ffd93d" stroke="white" strokeWidth="1"/>
+                <circle cx="7" cy="17" r="1.5" fill="#ffd93d" opacity=".6"/>
+                <circle cx="19" cy="17" r="1.5" fill="#ffd93d" opacity=".6"/>
+                <defs>
+                  <linearGradient id="rev_grad" x1="2" y1="2" x2="24" y2="24" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#56ab2f"/><stop offset="1" stopColor="#a8e063"/>
+                  </linearGradient>
+                </defs>
+              </svg>
+            ),
+            bg: 'rgba(82,201,122,0.1)', color: '#52c97a',
+          },
+          {
+            label: 'Cash Payments',
+            value: filtered.filter(i => i.payment_method === 'Cash').length,
+            icon: (
+              <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
+                <rect x="2" y="7" width="22" height="13" rx="3" fill="url(#cash_grad)"/>
+                <rect x="2" y="7" width="22" height="13" rx="3" fill="url(#cash_grad)"/>
+                <rect x="4" y="9" width="4" height="3" rx="1" fill="white" fillOpacity=".25"/>
+                <rect x="18" y="15" width="4" height="3" rx="1" fill="white" fillOpacity=".25"/>
+                <circle cx="13" cy="13.5" r="3" fill="white" fillOpacity=".95"/>
+                <text x="13" y="16" textAnchor="middle" fontSize="4" fontWeight="bold" fill="#f59e0b" fontFamily="Arial">₹</text>
+                <defs>
+                  <linearGradient id="cash_grad" x1="2" y1="7" x2="24" y2="20" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#f59e0b"/><stop offset="1" stopColor="#ffd93d"/>
+                  </linearGradient>
+                </defs>
+              </svg>
+            ),
+            bg: 'rgba(245,158,11,0.1)', color: '#f59e0b',
+          },
+          {
+            label: 'Digital Payments',
+            value: filtered.filter(i => ['Card','UPI'].includes(i.payment_method)).length,
+            icon: (
+              <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
+                <rect x="7" y="2" width="12" height="22" rx="3" fill="url(#dig_grad)"/>
+                <rect x="9" y="4" width="8" height="12" rx="1" fill="white" fillOpacity=".2"/>
+                <circle cx="13" cy="20" r="1.5" fill="white" fillOpacity=".8"/>
+                <rect x="10" y="6" width="6" height="1" rx=".5" fill="white" fillOpacity=".6"/>
+                <rect x="10" y="8.5" width="4" height="1" rx=".5" fill="white" fillOpacity=".4"/>
+                <circle cx="19" cy="7" r="4" fill="#ffd93d"/>
+                <text x="19" y="9.5" textAnchor="middle" fontSize="5" fontWeight="bold" fill="#1a1a2e" fontFamily="Arial">↑</text>
+                <defs>
+                  <linearGradient id="dig_grad" x1="7" y1="2" x2="19" y2="24" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#4d96ff"/><stop offset="1" stopColor="#6c63ff"/>
+                  </linearGradient>
+                </defs>
+              </svg>
+            ),
+            bg: 'rgba(77,150,255,0.1)', color: '#4d96ff',
+          },
+          {
+            label: 'Unpaid',
+            value: filtered.filter(i => i.status === 'unpaid').length,
+            icon: (
+              <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
+                <circle cx="13" cy="13" r="11" fill="url(#unp_grad)"/>
+                <line x1="9" y1="9" x2="17" y2="17" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
+                <line x1="17" y1="9" x2="9" y2="17" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
+                <defs>
+                  <linearGradient id="unp_grad" x1="2" y1="2" x2="24" y2="24" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#ff6b6b"/><stop offset="1" stopColor="#ef4444"/>
+                  </linearGradient>
+                </defs>
+              </svg>
+            ),
+            bg: 'rgba(239,68,68,0.1)', color: '#ef4444',
+          },
         ].map(card => (
-          <div key={card.label} className="rec-stat">
-            <div className="rec-stat-icon" style={{ background: card.bg }}>{card.icon}</div>
-            <div><div className="rec-stat-value">{card.value}</div><div className="rec-stat-label">{card.label}</div></div>
+          <div key={card.label} className="rec-stat" style={{borderTop: `3px solid ${card.color}`}}>
+            <div className="rec-stat-icon" style={{ background: card.bg }}>
+              {card.icon}
+            </div>
+            <div>
+              <div className="rec-stat-value" style={{color: card.color}}>{card.value}</div>
+              <div className="rec-stat-label">{card.label}</div>
+            </div>
           </div>
         ))}
       </div>
 
       {/* Table */}
-      <div className="records-table-card" style={{overflow:"auto"}}>
-        <div className="records-table-header">
+      <div className="records-table-card" style={{overflow:'auto'}}>
+        {/* Header row: title + date filters + search */}
+        <div className="records-table-header" style={{flexWrap:'wrap',gap:12}}>
           <div>
             <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--text)', fontFamily: 'Raleway, sans-serif' }}>All Invoices</h3>
-            <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>Complete billing history</p>
+            <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
+              {dateRange === 'today' ? 'Today' : dateRange === 'week' ? 'Last 7 days' : dateRange === 'month' ? 'Last 30 days' : 'All time'} — {filtered.length} invoice{filtered.length !== 1 ? 's' : ''}
+            </p>
           </div>
-          <Input prefix={<SearchOutlined style={{ color: 'var(--muted)' }} />} placeholder="Search by invoice, customer, payment..." value={search} onChange={e => setSearch(e.target.value)}
-            style={{ width: 300, borderRadius: 10, border: '2px solid var(--border)', height: 40, fontFamily: 'Raleway, sans-serif' }} allowClear />
+          {/* Date range filter buttons */}
+          <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+            <CalendarDays size={14} style={{color:'var(--muted)'}}/>
+            {[
+              { key: 'today', label: 'Today' },
+              { key: 'week',  label: '7 Days' },
+              { key: 'month', label: '30 Days' },
+              { key: 'all',   label: 'All Time' },
+            ].map(btn => (
+              <button key={btn.key} onClick={() => setDateRange(btn.key)} style={{
+                padding: '5px 14px', borderRadius: 20, border: '2px solid',
+                borderColor: dateRange === btn.key ? '#6c63ff' : 'var(--border)',
+                background: dateRange === btn.key ? 'rgba(108,99,255,0.1)' : '#fff',
+                color: dateRange === btn.key ? '#6c63ff' : 'var(--muted)',
+                fontWeight: 700, fontSize: 12, cursor: 'pointer',
+                fontFamily: 'Raleway, sans-serif', transition: 'all .2s',
+              }}>{btn.label}</button>
+            ))}
+          </div>
+          <Input prefix={<Search size={14} style={{ color: 'var(--muted)' }} />} placeholder="Search by invoice, customer, payment..." value={search} onChange={e => setSearch(e.target.value)}
+            style={{ width: 280, borderRadius: 10, border: '2px solid var(--border)', height: 40, fontFamily: 'Raleway, sans-serif' }} allowClear />
         </div>
         {filtered.length > 0 ? (
           <Table columns={columns} dataSource={filtered.map((inv, i) => ({ ...inv, key: i }))}
@@ -247,7 +449,7 @@ function Records() {
       <Modal
         title={
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg,#667eea,#764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 16 }}><FilePdfOutlined /></div>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg,#667eea,#764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 16 }}><FileDown size={16}/></div>
             <div>
               <div style={{ fontWeight: 700, fontSize: 16, fontFamily: 'Raleway, sans-serif' }}>Invoice Details</div>
               <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 400 }}>{selectedInvoice?.invoice_number}</div>
@@ -257,7 +459,7 @@ function Records() {
         open={showDetails} onCancel={() => setShowDetails(false)}
         footer={[
           <Button key="close" onClick={() => setShowDetails(false)} style={{ borderRadius: 10, fontFamily: 'Raleway, sans-serif' }}>Close</Button>,
-          <Button key="pdf" type="primary" icon={<DownloadOutlined />} onClick={() => { downloadPDF(selectedInvoice?.id); setShowDetails(false); }}
+          <Button key="pdf" type="primary" icon={<Download size={14}/>} onClick={() => { downloadPDF(selectedInvoice?.id); setShowDetails(false); }}
             style={{ borderRadius: 10, background: 'linear-gradient(135deg,#667eea,#764ba2)', border: 'none', fontWeight: 700, fontFamily: 'Raleway, sans-serif' }}>Download PDF</Button>,
         ]} width={680}
       >
@@ -280,6 +482,7 @@ function Records() {
                 ))}
               </div>
             </div>
+            {/* ── Fix 6: items table with color + size ── */}
             <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 20 }}>
               <thead><tr style={{ background: 'var(--bg)' }}>
                 {['Product', 'Qty', 'Unit Price', 'Total'].map(h => (
@@ -289,7 +492,22 @@ function Records() {
               <tbody>
                 {selectedInvoice.items?.map((item, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ padding: '12px 14px', fontWeight: 600, color: 'var(--text)', fontFamily: 'Raleway, sans-serif' }}>{item.product_name}</td>
+                    <td style={{ padding: '12px 14px', fontWeight: 600, color: 'var(--text)', fontFamily: 'Raleway, sans-serif' }}>
+                      {item.product_name}
+                      {/* Color + Size sub-row */}
+                      {(item.color || item.size) && (
+                        <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
+                          {item.color && (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: 'var(--muted)', background: 'var(--bg)', padding: '1px 7px 1px 4px', borderRadius: 20, border: '1px solid var(--border)' }}>
+                              <span style={{ width: 10, height: 10, borderRadius: '50%', background: item.color, display: 'inline-block', border: '1px solid rgba(0,0,0,.12)' }} />{colorName(item.color)}
+                            </span>
+                          )}
+                          {item.size && (
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#4d96ff', background: 'rgba(77,150,255,.1)', padding: '1px 7px', borderRadius: 20 }}>{item.size}</span>
+                          )}
+                        </div>
+                      )}
+                    </td>
                     <td style={{ padding: '12px 14px', textAlign: 'right', color: 'var(--muted)', fontFamily: 'Raleway, sans-serif' }}>{item.quantity}</td>
                     <td style={{ padding: '12px 14px', textAlign: 'right', color: 'var(--muted)', fontFamily: 'Raleway, sans-serif' }}>₹{item.unit_price.toLocaleString('en-IN')}</td>
                     <td style={{ padding: '12px 14px', textAlign: 'right', fontWeight: 700, color: 'var(--text)', fontFamily: 'Raleway, sans-serif' }}>₹{item.total_price.toLocaleString('en-IN')}</td>
@@ -320,7 +538,7 @@ function Records() {
       <Modal
         title={
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg,#f59e0b,#ef4444)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 16 }}><EditOutlined /></div>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg,#f59e0b,#ef4444)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 16 }}><FilePen size={16}/></div>
             <div>
               <div style={{ fontWeight: 700, fontSize: 16, fontFamily: 'Raleway, sans-serif' }}>Edit Invoice</div>
               <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 400 }}>{editInv?.invoice_number}</div>

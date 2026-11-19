@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { message } from 'antd';
-import { UserOutlined, LockOutlined, EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons';
+import { User, Lock, Eye, EyeOff, FileText, BarChart3, ShoppingBag } from 'lucide-react';
 import ButterflyLogo from '../components/ButterflyLogo';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -64,12 +64,12 @@ function Login({ onLogin, sessionMsg }) {
 
           <div className="login-features">
             {[
-              { icon: '📄', text: 'Generate professional PDF invoices instantly' },
-              { icon: '📊', text: 'Track daily revenue and sales analytics' },
-              { icon: '🛒', text: 'Manage products and billing with ease' },
+              { icon: <FileText size={20} strokeWidth={1.8}/>,   text: 'Generate professional PDF invoices instantly', color: '#6c63ff', bg: 'rgba(108,99,255,0.18)' },
+              { icon: <BarChart3 size={20} strokeWidth={1.8}/>,  text: 'Track daily revenue and sales analytics',      color: '#52c97a', bg: 'rgba(82,201,122,0.18)'  },
+              { icon: <ShoppingBag size={20} strokeWidth={1.8}/>,text: 'Manage products and billing with ease',         color: '#4d96ff', bg: 'rgba(77,150,255,0.18)'  },
             ].map((item, i) => (
               <div key={i} className="login-feature-item">
-                <div className="login-feature-icon">{item.icon}</div>
+                <div className="login-feature-icon" style={{ background: item.bg, color: item.color, borderRadius: 12, width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{item.icon}</div>
                 <span className="login-feature-text">{item.text}</span>
               </div>
             ))}
@@ -96,7 +96,7 @@ function Login({ onLogin, sessionMsg }) {
               <div>
                 <label className="login-label">Username</label>
                 <div style={{ position: 'relative' }}>
-                  <UserOutlined style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', fontSize: 16 }} />
+                  <User size={16} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
                   <input
                     type="text" value={username}
                     onChange={e => setUsername(e.target.value)}
@@ -113,7 +113,7 @@ function Login({ onLogin, sessionMsg }) {
               <div>
                 <label className="login-label">Password</label>
                 <div style={{ position: 'relative' }}>
-                  <LockOutlined style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', fontSize: 16 }} />
+                  <Lock size={16} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
                   <input
                     type={showPassword ? 'text' : 'password'} value={password}
                     onChange={e => setPassword(e.target.value)}
@@ -125,8 +125,8 @@ function Login({ onLogin, sessionMsg }) {
                     onBlur={e => { e.target.style.borderColor='#e5e7eb'; e.target.style.background='#f9fafb'; e.target.style.boxShadow='none'; }}
                   />
                   <div onClick={() => setShowPassword(!showPassword)}
-                    style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', color: '#9ca3af', fontSize: 16 }}>
-                    {showPassword ? <EyeInvisibleOutlined /> : <EyeOutlined />}
+                    style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', color: '#9ca3af' }}>
+                    {showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}
                   </div>
                 </div>
               </div>

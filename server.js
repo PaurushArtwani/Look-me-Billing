@@ -15,7 +15,8 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-producti
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // Database setup
 const db = new sqlite3.Database('./billing.db', (err) => {
@@ -26,16 +27,20 @@ const db = new sqlite3.Database('./billing.db', (err) => {
 // Initialize database tables
 const initializeDatabase = () => {
   db.serialize(() => {
-    // Admin users table
+    // Admin users table — with role column
     db.run(`
       CREATE TABLE IF NOT EXISTS admins (
         id TEXT PRIMARY KEY,
         username TEXT UNIQUE NOT NULL,
         password TEXT NOT NULL,
         email TEXT,
+        role TEXT DEFAULT 'admin',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // Add role column if upgrading existing DB
+    db.run(`ALTER TABLE admins ADD COLUMN role TEXT DEFAULT 'admin'`, () => {});
 
     // Products table
     db.run(`
@@ -45,9 +50,19 @@ const initializeDatabase = () => {
         price REAL NOT NULL,
         category TEXT,
         stock INTEGER DEFAULT 0,
+        colors TEXT DEFAULT '[]',
+        sizes TEXT DEFAULT '[]',
+        image TEXT DEFAULT '',
+        barcode TEXT DEFAULT '',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // Add columns if upgrading existing DB
+    db.run(`ALTER TABLE products ADD COLUMN colors   TEXT DEFAULT '[]'`, () => {});
+    db.run(`ALTER TABLE products ADD COLUMN sizes    TEXT DEFAULT '[]'`, () => {});
+    db.run(`ALTER TABLE products ADD COLUMN image    TEXT DEFAULT ''`,   () => {});
+    db.run(`ALTER TABLE products ADD COLUMN barcode  TEXT DEFAULT ''`,   () => {});
 
     // Invoices table
     db.run(`
@@ -78,10 +93,16 @@ const initializeDatabase = () => {
         quantity INTEGER NOT NULL,
         unit_price REAL NOT NULL,
         total_price REAL NOT NULL,
+        color TEXT DEFAULT '',
+        size TEXT DEFAULT '',
         FOREIGN KEY (invoice_id) REFERENCES invoices(id),
         FOREIGN KEY (product_id) REFERENCES products(id)
       )
     `);
+
+    // Add color/size to invoice_items if upgrading
+    db.run(`ALTER TABLE invoice_items ADD COLUMN color TEXT DEFAULT ''`, () => {});
+    db.run(`ALTER TABLE invoice_items ADD COLUMN size  TEXT DEFAULT ''`, () => {});
 
     // Activity log table
     db.run(`
@@ -100,29 +121,26 @@ const initializeDatabase = () => {
     const hashedPassword = bcrypt.hashSync('admin123', 10);
     
     db.run(
-      `INSERT OR IGNORE INTO admins (id, username, password, email) VALUES (?, ?, ?, ?)`,
-      [defaultAdminId, 'admin', hashedPassword, 'admin@lookatme.com'],
+      `INSERT OR IGNORE INTO admins (id, username, password, email, role) VALUES (?, ?, ?, ?, ?)`,
+      [defaultAdminId, 'admin', hashedPassword, 'admin@lookatme.com', 'admin'],
       (err) => {
         if (!err) console.log('Default admin user created (username: admin, password: admin123)');
       }
     );
 
-    // Insert sample products
-    const sampleProducts = [
-      { name: 'Laptop', price: 50000, category: 'Electronics' },
-      { name: 'Mouse', price: 500, category: 'Accessories' },
-      { name: 'Keyboard', price: 1500, category: 'Accessories' },
-      { name: 'Monitor', price: 15000, category: 'Electronics' },
-      { name: 'USB Cable', price: 200, category: 'Accessories' },
-      { name: 'Headphones', price: 3000, category: 'Audio' },
-    ];
+    // Create default superadmin if not exists
+    const superAdminId = uuidv4();
+    const superHashedPassword = bcrypt.hashSync('superadmin123', 10);
+    db.run(
+      `INSERT OR IGNORE INTO admins (id, username, password, email, role) VALUES (?, ?, ?, ?, ?)`,
+      [superAdminId, 'superadmin', superHashedPassword, 'superadmin@lookatme.com', 'superadmin'],
+      (err) => {
+        if (!err) console.log('Default superadmin created (username: superadmin, password: superadmin123)');
+      }
+    );
 
-    sampleProducts.forEach(product => {
-      db.run(
-        `INSERT OR IGNORE INTO products (id, name, price, category, stock) VALUES (?, ?, ?, ?, ?)`,
-        [uuidv4(), product.name, product.price, product.category, 100]
-      );
-    });
+    // Note: Sample products removed — add products via Super Admin panel
+
   });
 };
 
@@ -136,18 +154,48 @@ const logActivity = (adminId, action, details) => {
   );
 };
 
+// ── Hex → readable color name ────────────────────────────────
+const COLOR_NAMES = {
+  '#ff4d4f':'Red','#ff0000':'Red','#e53935':'Red','#c62828':'Dark Red',
+  '#ff7a45':'Orange Red','#ff6b35':'Orange','#ff9800':'Orange','#fb8c00':'Dark Orange',
+  '#ffd93d':'Yellow','#ffeb3b':'Yellow','#fdd835':'Bright Yellow','#f9a825':'Amber',
+  '#52c97a':'Green','#4caf50':'Green','#43a047':'Medium Green','#2e7d32':'Dark Green',
+  '#56ab2f':'Lime Green','#a8e063':'Light Green','#00e676':'Mint',
+  '#4d96ff':'Blue','#2196f3':'Blue','#1976d2':'Dark Blue','#1e90ff':'Dodger Blue',
+  '#6c63ff':'Purple','#9c27b0':'Violet','#7b1fa2':'Dark Purple','#764ba2':'Plum',
+  '#667eea':'Lavender','#e91e63':'Pink','#ff69b4':'Hot Pink','#f06292':'Light Pink',
+  '#ff4081':'Rose','#f8bbd9':'Baby Pink',
+  '#000000':'Black','#1a1a2e':'Navy Black','#212121':'Charcoal','#333333':'Dark Grey',
+  '#ffffff':'White','#f5f5f5':'Off White','#fafafa':'Snow White',
+  '#9e9e9e':'Grey','#757575':'Medium Grey','#bdbdbd':'Light Grey',
+  '#8b4513':'Brown','#795548':'Dark Brown','#6d4c41':'Coffee','#a1887f':'Mocha',
+  '#d2691e':'Chocolate','#c8a876':'Tan','#f5deb3':'Wheat','#deb887':'Burlywood',
+  '#00bcd4':'Cyan','#00acc1':'Dark Cyan','#4dd0e1':'Light Cyan',
+  '#009688':'Teal','#00897b':'Dark Teal',
+  '#ffb300':'Gold','#ffc107':'Amber Gold','#ff8f00':'Deep Gold',
+};
+const colorName = (hex) => {
+  if (!hex || !hex.trim()) return '';
+  const h = hex.toLowerCase().trim();
+  return COLOR_NAMES[h] || h.replace('#','').toUpperCase();
+};
+
 // Authentication middleware
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
-
   if (!token) return res.status(401).json({ error: 'Access token required' });
-
   jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) return res.status(403).json({ error: 'Invalid token' });
     req.user = user;
     next();
   });
+};
+
+// Superadmin-only middleware
+const requireSuperAdmin = (req, res, next) => {
+  if (req.user?.role !== 'superadmin') return res.status(403).json({ error: 'Superadmin access required' });
+  next();
 };
 
 // ==================== AUTH ROUTES ====================
@@ -167,12 +215,12 @@ app.post('/api/auth/login', (req, res) => {
     const passwordMatch = bcrypt.compareSync(password, admin.password);
     if (!passwordMatch) return res.status(401).json({ error: 'Invalid credentials' });
 
-    const token = jwt.sign({ id: admin.id, username: admin.username }, JWT_SECRET, {
+    const token = jwt.sign({ id: admin.id, username: admin.username, role: admin.role || 'admin' }, JWT_SECRET, {
       expiresIn: '24h',
     });
 
     logActivity(admin.id, 'LOGIN', `User ${username} logged in`);
-    res.json({ token, admin: { id: admin.id, username: admin.username, email: admin.email } });
+    res.json({ token, admin: { id: admin.id, username: admin.username, email: admin.email, role: admin.role || 'admin' } });
   });
 });
 
@@ -283,49 +331,91 @@ app.delete('/api/auth/users/:id', authenticateToken, (req, res) => {
 app.get('/api/products', authenticateToken, (req, res) => {
   db.all(`SELECT * FROM products ORDER BY name`, (err, products) => {
     if (err) return res.status(500).json({ error: 'Database error' });
-    res.json(products);
+    res.json(products.map(p => ({
+      ...p,
+      colors:  JSON.parse(p.colors  || '[]'),
+      sizes:   JSON.parse(p.sizes   || '[]'),
+      barcode: p.barcode || '',
+    })));
   });
 });
 
-// Add product
-app.post('/api/products', authenticateToken, (req, res) => {
-  const { name, price, category, stock } = req.body;
-
-  if (!name || !price) {
-    return res.status(400).json({ error: 'Name and price required' });
-  }
-
-  const productId = uuidv4();
-  db.run(
-    `INSERT INTO products (id, name, price, category, stock) VALUES (?, ?, ?, ?, ?)`,
-    [productId, name, price, category || 'General', stock || 0],
-    (err) => {
-      if (err) return res.status(500).json({ error: 'Failed to add product' });
-      logActivity(req.user.id, 'ADD_PRODUCT', `Added product: ${name}`);
-      res.status(201).json({ id: productId, name, price, category, stock });
-    }
-  );
+// Find product by barcode
+app.get('/api/products/barcode/:code', authenticateToken, (req, res) => {
+  const code = req.params.code.trim();
+  if (!code) return res.status(400).json({ error: 'Barcode required' });
+  db.get(`SELECT * FROM products WHERE barcode = ?`, [code], (err, p) => {
+    if (err)  return res.status(500).json({ error: 'Database error' });
+    if (!p)   return res.status(404).json({ error: 'Product not found' });
+    res.json({
+      ...p,
+      colors:  JSON.parse(p.colors  || '[]'),
+      sizes:   JSON.parse(p.sizes   || '[]'),
+      barcode: p.barcode || '',
+    });
+  });
 });
 
-// Update product
-app.put('/api/products/:id', authenticateToken, (req, res) => {
-  const { id } = req.params;
-  const { name, price, category, stock } = req.body;
+// Add product (superadmin only)
+app.post('/api/products', authenticateToken, requireSuperAdmin, (req, res) => {
+  const { name, price, category, stock, colors, sizes, image, barcode } = req.body;
+  if (!name || !price) return res.status(400).json({ error: 'Name and price required' });
 
-  if (!name || !price) {
-    return res.status(400).json({ error: 'Name and price required' });
+  // Barcode uniqueness check (skip empty)
+  const bc = (barcode || '').trim();
+  const doInsert = () => {
+    const productId = uuidv4();
+    db.run(
+      `INSERT INTO products (id, name, price, category, stock, colors, sizes, image, barcode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [productId, name, price, category || 'General', stock || 0,
+       JSON.stringify(colors || []), JSON.stringify(sizes || []), image || '', bc],
+      (err) => {
+        if (err) return res.status(500).json({ error: 'Failed to add product' });
+        logActivity(req.user.id, 'ADD_PRODUCT', `Added product: ${name}`);
+        res.status(201).json({ id: productId, name, price, category, stock, colors: colors||[], sizes: sizes||[], image: image||'', barcode: bc });
+      }
+    );
+  };
+
+  if (bc) {
+    db.get(`SELECT id FROM products WHERE barcode = ?`, [bc], (err, row) => {
+      if (row) return res.status(409).json({ error: 'Barcode already assigned to another product' });
+      doInsert();
+    });
+  } else {
+    doInsert();
   }
+});
 
-  db.run(
-    `UPDATE products SET name = ?, price = ?, category = ?, stock = ? WHERE id = ?`,
-    [name, price, category || 'General', stock || 0, id],
-    function(err) {
-      if (err) return res.status(500).json({ error: 'Failed to update product' });
-      if (this.changes === 0) return res.status(404).json({ error: 'Product not found' });
-      logActivity(req.user.id, 'EDIT_PRODUCT', `Updated product: ${name}`);
-      res.json({ id, name, price, category, stock });
-    }
-  );
+// Update product (superadmin only)
+app.put('/api/products/:id', authenticateToken, requireSuperAdmin, (req, res) => {
+  const { id } = req.params;
+  const { name, price, category, stock, colors, sizes, image, barcode } = req.body;
+  if (!name || !price) return res.status(400).json({ error: 'Name and price required' });
+  const bc = (barcode || '').trim();
+
+  const doUpdate = () => {
+    db.run(
+      `UPDATE products SET name=?, price=?, category=?, stock=?, colors=?, sizes=?, image=?, barcode=? WHERE id=?`,
+      [name, price, category || 'General', stock || 0,
+       JSON.stringify(colors || []), JSON.stringify(sizes || []), image || '', bc, id],
+      function(err) {
+        if (err) return res.status(500).json({ error: 'Failed to update product' });
+        if (this.changes === 0) return res.status(404).json({ error: 'Product not found' });
+        logActivity(req.user.id, 'EDIT_PRODUCT', `Updated product: ${name}`);
+        res.json({ id, name, price, category, stock, colors: colors||[], sizes: sizes||[], image: image||'', barcode: bc });
+      }
+    );
+  };
+
+  if (bc) {
+    db.get(`SELECT id FROM products WHERE barcode = ? AND id != ?`, [bc, id], (err, row) => {
+      if (row) return res.status(409).json({ error: 'Barcode already assigned to another product' });
+      doUpdate();
+    });
+  } else {
+    doUpdate();
+  }
 });
 
 // Delete product
@@ -355,6 +445,28 @@ const generateInvoiceNumber = (callback) => {
   );
 };
 
+// Customer search (search past invoices by name or phone)
+app.get('/api/customers/search', authenticateToken, (req, res) => {
+  const q = (req.query.q || '').trim();
+  if (!q || q.length < 2) return res.json([]);
+  const like = `%${q}%`;
+  db.all(
+    `SELECT customer_name, customer_phone, customer_email,
+            MAX(created_at) AS last_purchase, COUNT(*) AS total_bills
+     FROM invoices
+     WHERE (customer_name LIKE ? OR customer_phone LIKE ?)
+       AND created_by = ?
+     GROUP BY customer_name, customer_phone, customer_email
+     ORDER BY last_purchase DESC
+     LIMIT 8`,
+    [like, like, req.user.id],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      res.json(rows);
+    }
+  );
+});
+
 // Create invoice
 app.post('/api/invoices', authenticateToken, (req, res) => {
   const { customer_name, customer_phone, customer_email, items, tax_amount, discount_amount, payment_method, status } = req.body;
@@ -379,10 +491,17 @@ app.post('/api/invoices', authenticateToken, (req, res) => {
         items.forEach((item) => {
           const itemId = uuidv4();
           db.run(
-            `INSERT INTO invoice_items (id, invoice_id, product_id, product_name, quantity, unit_price, total_price)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [itemId, invoiceId, item.product_id, item.product_name, item.quantity, item.unit_price, item.total_price],
+            `INSERT INTO invoice_items (id, invoice_id, product_id, product_name, quantity, unit_price, total_price, color, size)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [itemId, invoiceId, item.product_id, item.product_name, item.quantity, item.unit_price, item.total_price,
+             item.color || '', item.size || ''],
             (err) => {
+              // ── Deduct stock automatically ──
+              db.run(
+                `UPDATE products SET stock = MAX(0, stock - ?) WHERE id = ?`,
+                [item.quantity, item.product_id]
+              );
+
               itemsInserted++;
               if (itemsInserted === items.length) {
                 logActivity(req.user.id, 'CREATE_INVOICE', `Created invoice: ${invoiceNumber}`);
@@ -423,6 +542,14 @@ app.put('/api/invoices/:id', authenticateToken, (req, res) => {
 app.delete('/api/invoices/:id', authenticateToken, (req, res) => {
   const { id } = req.params;
   db.serialize(() => {
+    // Restore stock before deleting items
+    db.all(`SELECT product_id, quantity FROM invoice_items WHERE invoice_id=?`, [id], (err, items) => {
+      if (!err && items) {
+        items.forEach(item => {
+          db.run(`UPDATE products SET stock = stock + ? WHERE id = ?`, [item.quantity, item.product_id]);
+        });
+      }
+    });
     db.run(`DELETE FROM invoice_items WHERE invoice_id=?`, [id]);
     db.run(`DELETE FROM invoices WHERE id=?`, [id], function(err) {
       if (err) return res.status(500).json({ error: 'Failed to delete invoice' });
@@ -545,9 +672,13 @@ app.get('/api/invoices/:id/pdf', authenticateToken, (req, res) => {
          .font('Helvetica-Bold').fontSize(28)
          .text('Look @ me', textX, 38, { lineBreak: false });
 
-      doc.fillColor('rgba(255,255,255,0.55)')
-         .font('Helvetica').fontSize(11)
-         .text('Professional Billing System', textX, 72, { lineBreak: false });
+      doc.fillColor('rgba(255,255,255,0.40)')
+         .font('Helvetica').fontSize(8.5)
+         .text('35, Sindhi Bazar, Udaipur (Rajasthan)', textX, 72, { lineBreak: false });
+
+      doc.fillColor('rgba(255,255,255,0.40)')
+         .font('Helvetica').fontSize(8.5)
+         .text('Ph: 9414736848 / 7023933047', textX, 85, { lineBreak: false });
 
       // ── INVOICE BADGE (top-right) ────────────────────────────────
       const badgeX = W - margin - 130;
@@ -622,22 +753,36 @@ app.get('/api/invoices/:id/pdf', authenticateToken, (req, res) => {
       let rowY = tableY + 28;
       items.forEach((item, idx) => {
         const rowBg = idx % 2 === 0 ? '#ffffff' : '#f8f9fc';
-        doc.rect(margin, rowY, W - margin * 2, 26).fill(rowBg);
+        // Calculate row height — taller if color/size present
+        const hasVariant = (item.color && item.color.trim()) || (item.size && item.size.trim());
+        const rowH = hasVariant ? 36 : 26;
+
+        doc.rect(margin, rowY, W - margin * 2, rowH).fill(rowBg);
 
         // Left accent bar on hover rows
         if (idx % 2 !== 0) {
-          doc.rect(margin, rowY, 3, 26).fill('#6c63ff');
+          doc.rect(margin, rowY, 3, rowH).fill('#6c63ff');
         }
 
         doc.fillColor('#1a1a2e').font('Helvetica-Bold').fontSize(9)
-           .text(item.product_name, cols.item, rowY + 8, { width: 230, lineBreak: false });
-        doc.fillColor('#6b7280').font('Helvetica').fontSize(9)
-           .text(item.quantity.toString(), cols.qty, rowY + 8, { lineBreak: false });
-        doc.text(`Rs. ${item.unit_price.toLocaleString('en-IN')}`, cols.unit, rowY + 8, { lineBreak: false });
-        doc.fillColor('#1a1a2e').font('Helvetica-Bold').fontSize(9)
-           .text(`Rs. ${item.total_price.toLocaleString('en-IN')}`, cols.total, rowY + 8, { lineBreak: false });
+           .text(item.product_name, cols.item, rowY + 7, { width: 230, lineBreak: false });
 
-        rowY += 26;
+        // Color + Size below product name
+        if (hasVariant) {
+          const variantParts = [];
+          if (item.color && item.color.trim()) variantParts.push(`Color: ${colorName(item.color)}`);
+          if (item.size  && item.size.trim())  variantParts.push(`Size: ${item.size}`);
+          doc.fillColor('#6c63ff').font('Helvetica').fontSize(7.5)
+             .text(variantParts.join('  |  '), cols.item, rowY + 20, { width: 230, lineBreak: false });
+        }
+
+        doc.fillColor('#6b7280').font('Helvetica').fontSize(9)
+           .text(item.quantity.toString(), cols.qty, rowY + (hasVariant ? 13 : 8), { lineBreak: false });
+        doc.text(`Rs. ${item.unit_price.toLocaleString('en-IN')}`, cols.unit, rowY + (hasVariant ? 13 : 8), { lineBreak: false });
+        doc.fillColor('#1a1a2e').font('Helvetica-Bold').fontSize(9)
+           .text(`Rs. ${item.total_price.toLocaleString('en-IN')}`, cols.total, rowY + (hasVariant ? 13 : 8), { lineBreak: false });
+
+        rowY += rowH;
       });
 
       // Table bottom border
@@ -729,11 +874,20 @@ app.get('/api/dashboard/stats', authenticateToken, (req, res) => {
       db.get(`SELECT COUNT(*) as total_products FROM products`, (err, products) => {
         if (err) return res.status(500).json({ error: 'Database error' });
 
-        res.json({
-          today_invoices: row?.total_invoices || 0,
-          today_revenue: row?.total_revenue || 0,
-          total_products: products?.total_products || 0,
-        });
+        db.get(
+          `SELECT COUNT(*) as unpaid_invoices FROM invoices WHERE created_at LIKE ? AND status = 'unpaid'`,
+          [`${today}%`],
+          (err, unpaid) => {
+            if (err) return res.status(500).json({ error: 'Database error' });
+
+            res.json({
+              today_invoices: row?.total_invoices || 0,
+              today_revenue: row?.total_revenue || 0,
+              total_products: products?.total_products || 0,
+              unpaid_invoices: unpaid?.unpaid_invoices || 0,
+            });
+          }
+        );
       });
     }
   );
@@ -793,7 +947,8 @@ app.get('/api/invoices/:id/pdf-base64', authenticateToken, (req, res) => {
       doc.moveTo(lx+50*s,ly+8*s).lineTo(lx+50*s,ly+82*s).strokeColor('rgba(255,255,255,0.5)').lineWidth(1.5).stroke();
       const textX = lx+70;
       doc.fillColor('white').font('Helvetica-Bold').fontSize(28).text('Look @ me',textX,38,{lineBreak:false});
-      doc.fillColor('rgba(255,255,255,0.55)').font('Helvetica').fontSize(11).text('Professional Billing System',textX,72,{lineBreak:false});
+      doc.fillColor('rgba(255,255,255,0.40)').font('Helvetica').fontSize(8.5).text('35, Sindhi Bazar, Udaipur (Rajasthan)',textX,72,{lineBreak:false});
+      doc.fillColor('rgba(255,255,255,0.40)').font('Helvetica').fontSize(8.5).text('Ph: 9414736848 / 7023933047',textX,85,{lineBreak:false});
       const badgeX = W-margin-130;
       doc.roundedRect(badgeX,30,130,36,8).fill('#6c63ff');
       doc.fillColor('white').font('Helvetica-Bold').fontSize(14).text('INVOICE',badgeX,42,{width:130,align:'center',lineBreak:false});
@@ -825,13 +980,22 @@ app.get('/api/invoices/:id/pdf-base64', authenticateToken, (req, res) => {
       });
       let rowY=tableY+28;
       items.forEach((item,idx)=>{
-        doc.rect(margin,rowY,W-margin*2,26).fill(idx%2===0?'#ffffff':'#f8f9fc');
-        if(idx%2!==0)doc.rect(margin,rowY,3,26).fill('#6c63ff');
-        doc.fillColor('#1a1a2e').font('Helvetica-Bold').fontSize(9).text(item.product_name,cols.item,rowY+8,{width:230,lineBreak:false});
-        doc.fillColor('#6b7280').font('Helvetica').fontSize(9).text(item.quantity.toString(),cols.qty,rowY+8,{lineBreak:false});
-        doc.text(`Rs. ${item.unit_price.toLocaleString('en-IN')}`,cols.unit,rowY+8,{lineBreak:false});
-        doc.fillColor('#1a1a2e').font('Helvetica-Bold').fontSize(9).text(`Rs. ${item.total_price.toLocaleString('en-IN')}`,cols.total,rowY+8,{lineBreak:false});
-        rowY+=26;
+        const hasVariant=(item.color&&item.color.trim())||(item.size&&item.size.trim());
+        const rowH=hasVariant?36:26;
+        doc.rect(margin,rowY,W-margin*2,rowH).fill(idx%2===0?'#ffffff':'#f8f9fc');
+        if(idx%2!==0)doc.rect(margin,rowY,3,rowH).fill('#6c63ff');
+        doc.fillColor('#1a1a2e').font('Helvetica-Bold').fontSize(9).text(item.product_name,cols.item,rowY+7,{width:230,lineBreak:false});
+        if(hasVariant){
+          const vp=[];
+          if(item.color&&item.color.trim())vp.push(`Color: ${colorName(item.color)}`);
+          if(item.size&&item.size.trim())vp.push(`Size: ${item.size}`);
+          doc.fillColor('#6c63ff').font('Helvetica').fontSize(7.5).text(vp.join('  |  '),cols.item,rowY+20,{width:230,lineBreak:false});
+        }
+        const vy=rowY+(hasVariant?13:8);
+        doc.fillColor('#6b7280').font('Helvetica').fontSize(9).text(item.quantity.toString(),cols.qty,vy,{lineBreak:false});
+        doc.text(`Rs. ${item.unit_price.toLocaleString('en-IN')}`,cols.unit,vy,{lineBreak:false});
+        doc.fillColor('#1a1a2e').font('Helvetica-Bold').fontSize(9).text(`Rs. ${item.total_price.toLocaleString('en-IN')}`,cols.total,vy,{lineBreak:false});
+        rowY+=rowH;
       });
       doc.rect(margin,rowY,W-margin*2,1).fill('#e5e7eb');
       rowY+=16;
@@ -863,6 +1027,134 @@ app.get('/api/invoices/:id/pdf-base64', authenticateToken, (req, res) => {
       doc.end();
     });
   });
+});
+
+// ==================== SUPERADMIN ROUTES ====================
+
+// Get all admins
+app.get('/api/superadmin/users', authenticateToken, requireSuperAdmin, (req, res) => {
+  db.all(`SELECT id, username, email, role, created_at FROM admins ORDER BY created_at ASC`, [], (err, rows) => {
+    if (err) return res.status(500).json({ error: 'Database error' });
+    res.json(rows);
+  });
+});
+
+// Create new admin user
+app.post('/api/superadmin/users', authenticateToken, requireSuperAdmin, (req, res) => {
+  const { username, password, email, role } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+  if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  const safeRole = role === 'superadmin' ? 'superadmin' : 'admin';
+  const id = uuidv4();
+  const hashed = bcrypt.hashSync(password, 10);
+  db.run(
+    `INSERT INTO admins (id, username, password, email, role) VALUES (?, ?, ?, ?, ?)`,
+    [id, username, hashed, email || '', safeRole],
+    function(err) {
+      if (err) {
+        if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Username already exists' });
+        return res.status(500).json({ error: 'Failed to create user' });
+      }
+      logActivity(req.user.id, 'CREATE_USER', `Superadmin created user: ${username} (${safeRole})`);
+      res.json({ id, username, email: email || '', role: safeRole });
+    }
+  );
+});
+
+// Delete admin user (superadmin cannot delete themselves)
+app.delete('/api/superadmin/users/:id', authenticateToken, requireSuperAdmin, (req, res) => {
+  const { id } = req.params;
+  if (id === req.user.id) return res.status(400).json({ error: 'Cannot delete your own account' });
+  db.run(`DELETE FROM admins WHERE id = ?`, [id], function(err) {
+    if (err) return res.status(500).json({ error: 'Failed to delete user' });
+    if (this.changes === 0) return res.status(404).json({ error: 'User not found' });
+    logActivity(req.user.id, 'DELETE_USER', `Superadmin deleted user id: ${id}`);
+    res.json({ success: true });
+  });
+});
+
+// Reset any user's password
+app.put('/api/superadmin/users/:id/reset-password', authenticateToken, requireSuperAdmin, (req, res) => {
+  const { id } = req.params;
+  const { new_password } = req.body;
+  if (!new_password || new_password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  const hashed = bcrypt.hashSync(new_password, 10);
+  db.run(`UPDATE admins SET password = ? WHERE id = ?`, [hashed, id], function(err) {
+    if (err) return res.status(500).json({ error: 'Failed to reset password' });
+    if (this.changes === 0) return res.status(404).json({ error: 'User not found' });
+    logActivity(req.user.id, 'RESET_PASSWORD', `Superadmin reset password for user id: ${id}`);
+    res.json({ success: true });
+  });
+});
+
+// Get all invoices (all users) with creator info
+app.get('/api/superadmin/invoices', authenticateToken, requireSuperAdmin, (req, res) => {
+  db.all(
+    `SELECT i.*, a.username as created_by_name
+     FROM invoices i
+     LEFT JOIN admins a ON i.created_by = a.id
+     ORDER BY i.created_at DESC`,
+    [],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      res.json(rows);
+    }
+  );
+});
+
+// Get superadmin dashboard stats
+app.get('/api/superadmin/stats', authenticateToken, requireSuperAdmin, (req, res) => {
+  db.get(`SELECT COUNT(*) as total_users FROM admins WHERE role = 'admin'`, [], (err, users) => {
+    if (err) return res.status(500).json({ error: 'Database error' });
+    db.get(`SELECT COUNT(*) as total_invoices, COALESCE(SUM(total_amount),0) as total_revenue FROM invoices`, [], (err2, inv) => {
+      if (err2) return res.status(500).json({ error: 'Database error' });
+      db.get(
+        `SELECT COUNT(*) as today_invoices, COALESCE(SUM(total_amount),0) as today_revenue FROM invoices WHERE DATE(created_at)=DATE('now')`,
+        [], (err3, today) => {
+          if (err3) return res.status(500).json({ error: 'Database error' });
+          res.json({
+            total_users: users.total_users,
+            total_invoices: inv.total_invoices,
+            total_revenue: inv.total_revenue,
+            today_invoices: today.today_invoices,
+            today_revenue: today.today_revenue,
+          });
+        }
+      );
+    });
+  });
+});
+
+// Product variant sales analytics (superadmin only)
+app.get('/api/superadmin/product-sales', authenticateToken, requireSuperAdmin, (req, res) => {
+  const { from, to } = req.query;
+  let dateFilter = '';
+  const params = [];
+
+  if (from && to) {
+    dateFilter = `WHERE i.created_at >= ? AND i.created_at < date(?, '+1 day')`;
+    params.push(from, to);
+  }
+
+  db.all(
+    `SELECT
+       ii.product_id,
+       ii.product_name,
+       ii.color,
+       ii.size,
+       SUM(ii.quantity)    AS total_qty,
+       SUM(ii.total_price) AS total_revenue,
+       COUNT(DISTINCT ii.invoice_id) AS total_orders
+     FROM invoice_items ii
+     ${from && to ? `JOIN invoices i ON ii.invoice_id = i.id ${dateFilter}` : ''}
+     GROUP BY ii.product_id, ii.color, ii.size
+     ORDER BY total_qty DESC`,
+    params,
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: 'Database error' });
+      res.json(rows);
+    }
+  );
 });
 
 // Start server

@@ -1,35 +1,35 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Avatar, Dropdown, Badge, message, Modal } from 'antd';
+import { Avatar, Dropdown, message, Modal, ConfigProvider } from 'antd';
 import {
-  DashboardOutlined, FileAddOutlined, FileTextOutlined,
-  LogoutOutlined, UserOutlined, BellOutlined,
-  MenuFoldOutlined, MenuUnfoldOutlined, SettingOutlined,
-  ClockCircleOutlined, ExclamationCircleOutlined,
-} from '@ant-design/icons';
+  LayoutDashboard, FilePlus2, ScrollText, LogOut, User, Bell,
+  PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, Clock, AlertTriangle, Crown,
+} from 'lucide-react';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import BillingModule from './pages/BillingModule';
 import Records from './pages/Records';
 import Settings from './pages/Settings';
+import SuperAdmin from './pages/SuperAdmin';
 import ButterflyLogo from './components/ButterflyLogo';
 import './App.css';
 
-const SESSION_TIMEOUT   = 30 * 60 * 1000; // 30 minutes
-const WARNING_BEFORE    =  5 * 60 * 1000; // warn at 25 min (5 min before logout)
+const SESSION_TIMEOUT   = 30 * 60 * 1000;
+const WARNING_BEFORE    =  5 * 60 * 1000;
 const WARNING_AT        = SESSION_TIMEOUT - WARNING_BEFORE;
 
 const NAV = [
-  { key: 'dashboard', icon: <DashboardOutlined />, label: 'Dashboard' },
-  { key: 'billing',   icon: <FileAddOutlined />,   label: 'Create Bill' },
-  { key: 'records',   icon: <FileTextOutlined />,  label: 'Records' },
-  { key: 'settings',  icon: <SettingOutlined />,   label: 'Settings' },
+  { key: 'dashboard', icon: <LayoutDashboard size={18} />, label: 'Dashboard' },
+  { key: 'billing',   icon: <FilePlus2        size={18} />, label: 'Create Bill' },
+  { key: 'records',   icon: <ScrollText       size={18} />, label: 'Records' },
+  { key: 'settings',  icon: <SettingsIcon     size={18} />, label: 'Settings' },
 ];
 
 const PAGE_TITLES = {
-  dashboard: 'Dashboard',
-  billing:   'Create New Bill',
-  records:   'Billing Records',
-  settings:  'Account Settings',
+  dashboard:   'Dashboard',
+  billing:     'Create New Bill',
+  records:     'Billing Records',
+  settings:    'Account Settings',
+  superadmin:  'Super Admin Panel',
 };
 
 export default function App() {
@@ -72,8 +72,20 @@ export default function App() {
   const doLogout = useCallback((reason = '') => {
     clearAllTimers();
     setShowWarning(false);
+
+    // Clear all localStorage
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    localStorage.clear();
+
+    // Clear sessionStorage
+    sessionStorage.clear();
+
+    // Clear browser caches (Service Worker caches if any)
+    if ('caches' in window) {
+      caches.keys().then(names => names.forEach(name => caches.delete(name)));
+    }
+
     setAuth(false);
     setUser(null);
     setPage('dashboard');
@@ -87,7 +99,7 @@ export default function App() {
     // Show warning at 25 min
     warningTimer.current = setTimeout(() => {
       setShowWarning(true);
-      setCountdown(300); // 5 min = 300 sec
+      setCountdown(3); // 5 min = 300 sec
       countdownRef.current = setInterval(() => {
         setCountdown(prev => {
           if (prev <= 1) {
@@ -170,6 +182,13 @@ export default function App() {
   };
 
   return (
+    <ConfigProvider
+      message={{
+        top: 20,
+        maxCount: 3,
+        getContainer: () => document.body,
+      }}
+    >
     <>
     <div className="app-shell">
 
@@ -218,12 +237,25 @@ export default function App() {
               {page === item.key && <span className="nav-active-bar" />}
             </button>
           ))}
+          {/* Super Admin nav — only for superadmin role */}
+          {user?.role === 'superadmin' && (
+            <button
+              className={`nav-item ${page === 'superadmin' ? 'nav-item--active' : ''}`}
+              onClick={() => handleNavClick('superadmin')}
+              title={collapsed && !isMobile ? 'Super Admin' : ''}
+              style={{ marginTop: 8, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 12 }}
+            >
+              <span className="nav-icon"><Crown size={18}/></span>
+              {(!collapsed || isMobile) && <span className="nav-label">Super Admin</span>}
+              {page === 'superadmin' && <span className="nav-active-bar" />}
+            </button>
+          )}
         </nav>
 
         {/* Collapse toggle — desktop only */}
         {!isMobile && (
           <button className="sidebar-toggle" onClick={() => setCollapsed(c => !c)}>
-            {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
           </button>
         )}
       </aside>
@@ -255,14 +287,14 @@ export default function App() {
 
           <div className="topbar-right">
             <button className="topbar-icon-btn">
-              <BellOutlined style={{ fontSize: 18 }} />
+              <Bell size={18} />
             </button>
 
             <Dropdown
               menu={{ items: [
-                { key: 'settings', icon: <SettingOutlined />, label: 'Account Settings', onClick: () => setPage('settings') },
+                { key: 'settings', icon: <SettingsIcon size={14} />, label: 'Account Settings', onClick: () => setPage('settings') },
                 { type: 'divider' },
-                { key: 'logout', icon: <LogoutOutlined />, label: 'Logout', danger: true, onClick: handleLogout },
+                { key: 'logout', icon: <LogOut size={14} />, label: 'Logout', danger: true, onClick: handleLogout },
               ]}}
               placement="bottomRight"
               arrow
@@ -271,7 +303,7 @@ export default function App() {
                 <Avatar
                   size={36}
                   style={{ background: 'linear-gradient(135deg,#667eea,#764ba2)', fontWeight: 700, flexShrink: 0 }}
-                  icon={<UserOutlined />}
+                  icon={<User size={16} />}
                 />
                 <div className="topbar-user-info">
                   <span className="topbar-user-name">{user?.username}</span>
@@ -284,10 +316,11 @@ export default function App() {
 
         {/* Page content */}
         <main className="page-content">
-          {page === 'dashboard' && <Dashboard />}
-          {page === 'billing'   && <BillingModule />}
-          {page === 'records'   && <Records />}
-          {page === 'settings'  && <Settings user={user} onUserUpdate={handleUserUpdate} />}
+          {page === 'dashboard'  && <Dashboard />}
+          {page === 'billing'    && <BillingModule />}
+          {page === 'records'    && <Records />}
+          {page === 'settings'   && <Settings user={user} onUserUpdate={handleUserUpdate} />}
+          {page === 'superadmin' && user?.role === 'superadmin' && <SuperAdmin />}
         </main>
 
         {/* ── MOBILE BOTTOM NAV ─────────────────────────────── */}
@@ -303,6 +336,15 @@ export default function App() {
                 <span className="mobile-nav-label">{item.label}</span>
               </button>
             ))}
+            {user?.role === 'superadmin' && (
+              <button
+                className={`mobile-nav-btn ${page === 'superadmin' ? 'mobile-nav-btn--active' : ''}`}
+                onClick={() => setPage('superadmin')}
+              >
+                <span className="mobile-nav-icon">👑</span>
+                <span className="mobile-nav-label">Admin</span>
+              </button>
+            )}
           </nav>
         )}
       </div>
@@ -319,7 +361,7 @@ export default function App() {
       >
         <div style={{ textAlign: 'center', padding: '8px 0 4px' }}>
           <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'rgba(245,158,11,.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontSize: 30 }}>
-            <ClockCircleOutlined style={{ color: '#f59e0b' }} />
+            <AlertTriangle size={32} color="#f59e0b" />
           </div>
           <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 800, color: 'var(--text)', fontFamily: 'Raleway, sans-serif' }}>
             Session Expiring Soon
@@ -347,5 +389,6 @@ export default function App() {
         </div>
       </Modal>
     </>
+    </ConfigProvider>
   );
 }
