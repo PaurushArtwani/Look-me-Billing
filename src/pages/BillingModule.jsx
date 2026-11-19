@@ -316,8 +316,8 @@ function BillingModule() {
       const token=localStorage.getItem('token');
       const res=await axios.get(`${API_URL}/customers/search?q=${encodeURIComponent(q)}`,{headers:{Authorization:'Bearer '+token}});
       setCustResults(res.data);
-      setShowCustDrop(res.data.length>0);
-    }catch{setCustResults([]);}
+      setShowCustDrop(true); // always show dropdown — results ya "not found" message
+    }catch{setCustResults([]);setShowCustDrop(false);}
     finally{setCustSearching(false);}
   };
 
@@ -628,12 +628,26 @@ function BillingModule() {
                 </div>
 
                 {/* Dropdown results */}
-                {showCustDrop&&custResults.length>0&&(
+                {showCustDrop&&(
                   <div ref={custDropRef} style={{position:'absolute',top:'100%',left:0,right:0,zIndex:999,background:'#fff',borderRadius:12,boxShadow:'0 8px 32px rgba(108,99,255,.18)',border:'1.5px solid rgba(108,99,255,.2)',marginTop:4,overflow:'hidden'}}>
-                    <div style={{padding:'8px 14px 6px',fontSize:11,fontWeight:700,color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.5px',borderBottom:'1px solid var(--border)',background:'rgba(108,99,255,.04)'}}>
-                      <Clock size={12} style={{marginRight:6,verticalAlign:'middle'}}/>Previous Customers ({custResults.length})
+                    <div style={{padding:'8px 14px 6px',fontSize:11,fontWeight:700,color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.5px',borderBottom:'1px solid var(--border)',background:'rgba(108,99,255,.04)',display:'flex',alignItems:'center',gap:6}}>
+                      <Search size={11}/>
+                      {custResults.length>0 ? `Previous Customers (${custResults.length})` : 'Search Results'}
                     </div>
-                    {custResults.map((c,i)=>(
+                    {custResults.length===0 ? (
+                      <div style={{padding:'18px 14px',textAlign:'center'}}>
+                        <div style={{fontSize:28,marginBottom:8}}>🔍</div>
+                        <div style={{fontWeight:700,fontSize:13,color:'var(--text)',fontFamily:'Raleway,sans-serif',marginBottom:4}}>
+                          No customer found
+                        </div>
+                        <div style={{fontSize:12,color:'var(--muted)'}}>
+                          "<strong>{custSearch}</strong>" se koi purana customer nahi mila
+                        </div>
+                        <div style={{fontSize:11,color:'var(--muted)',marginTop:6,padding:'6px 10px',background:'rgba(108,99,255,.06)',borderRadius:8}}>
+                          Naya customer hai — neeche details fill karo
+                        </div>
+                      </div>
+                    ) : custResults.map((c,i)=>(
                       <div key={i} onClick={()=>selectCustomer(c)}
                         style={{padding:'10px 14px',cursor:'pointer',borderBottom:i<custResults.length-1?'1px solid var(--border)':'none',transition:'background .15s',display:'flex',alignItems:'center',gap:12}}
                         onMouseEnter={e=>e.currentTarget.style.background='rgba(108,99,255,.06)'}
