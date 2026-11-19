@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Dark background circle -->
+  <circle cx="50" cy="50" r="50" fill="#1a1a2e"/>
+
+  <!-- Stem / vertical line -->
+  <line x1="52" y1="18" x2="52" y2="82" stroke="rgba(255,255,255,0.5)" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- Top-right wing: Red -->
+  <path d="M52 22 Q80 18 76 42 Q70 52 52 50 Z" fill="#ff4d4d" opacity="0.92"/>
+
+  <!-- Middle-left wing: Yellow -->
+  <path d="M52 44 Q22 36 20 56 Q22 68 52 62 Z" fill="#ffd93d" opacity="0.92"/>
+
+  <!-- Bottom-right wing: Teal/Blue -->
+  <path d="M52 60 Q72 56 74 70 Q70 80 52 76 Z" fill="#4ecdc4" opacity="0.92"/>
+
+  <!-- Bottom-left wing: Green -->
+  <path d="M52 64 Q34 60 30 74 Q34 84 52 80 Z" fill="#6bcf7f" opacity="0.88"/>
+</svg>
