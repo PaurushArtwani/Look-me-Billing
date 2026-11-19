@@ -454,12 +454,11 @@ app.get('/api/customers/search', authenticateToken, (req, res) => {
     `SELECT customer_name, customer_phone, customer_email,
             MAX(created_at) AS last_purchase, COUNT(*) AS total_bills
      FROM invoices
-     WHERE (customer_name LIKE ? OR customer_phone LIKE ?)
-       AND created_by = ?
-     GROUP BY customer_name, customer_phone, customer_email
+     WHERE (LOWER(customer_name) LIKE LOWER(?) OR customer_phone LIKE ?)
+     GROUP BY LOWER(customer_name), customer_phone, customer_email
      ORDER BY last_purchase DESC
-     LIMIT 8`,
-    [like, like, req.user.id],
+     LIMIT 10`,
+    [like, like],
     (err, rows) => {
       if (err) return res.status(500).json({ error: 'Database error' });
       res.json(rows);
