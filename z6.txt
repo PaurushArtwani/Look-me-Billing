@@ -1,2 +1,0 @@
-To https://github.com/PaurushArtwani/Look-me-Billing.git
-   912b4ee..823f6ff  main -> main
