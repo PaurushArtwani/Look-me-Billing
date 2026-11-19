@@ -525,7 +525,8 @@ function BillingModule() {
     const e={};
     if(!customerName.trim()) e.customerName='Customer name is required';
     else if(!/^[a-zA-Z\s.'-]{2,}$/.test(customerName.trim())) e.customerName='Name must contain only letters (no numbers)';
-    if(customerPhone.trim() && !validatePhone(customerPhone)) e.customerPhone='Enter a valid 10-digit phone number';
+    if(!customerPhone.trim()) e.customerPhone='Phone number is required';
+    else if(!validatePhone(customerPhone)) e.customerPhone='Enter a valid 10-digit phone number';
     if(customerEmail.trim() && !validateEmail(customerEmail)) e.customerEmail='Email must contain @ (e.g. name@email.com)';
     setErrors(e);
     return Object.keys(e).length===0;
@@ -674,7 +675,7 @@ function BillingModule() {
 
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:18}}>
                 <F label='Customer Name *' err={errors.customerName}><div className='field-wrap'><span className='field-icon'><User size={15}/></span><input type='text' value={customerName} onChange={e=>{const v=e.target.value.replace(/[0-9]/g,'');setCustomerName(v);if(errors.customerName)setErrors({...errors,customerName:''});}} placeholder='Full name (letters only)' className='field-input' style={{borderColor:errors.customerName?'#ef4444':undefined}}/></div></F>
-                <F label='Phone Number (10 digits)' err={errors.customerPhone}><div className='field-wrap'><span className='field-icon'><Phone size={15}/></span><input type='tel' value={customerPhone} onChange={e=>{const v=e.target.value.replace(/[^\d\s\-+()\+]/g,'');setCustomerPhone(v);if(errors.customerPhone)setErrors({...errors,customerPhone:''});}} placeholder='98765 43210' className='field-input' style={{borderColor:errors.customerPhone?'#ef4444':undefined}} maxLength={15}/></div></F>
+                <F label='Phone Number * (10 digits)' err={errors.customerPhone}><div className='field-wrap'><span className='field-icon'><Phone size={15}/></span><input type='tel' value={customerPhone} onChange={e=>{const v=e.target.value.replace(/[^\d\s\-+()\+]/g,'');setCustomerPhone(v);if(errors.customerPhone)setErrors({...errors,customerPhone:''});}} placeholder='98765 43210' className='field-input' style={{borderColor:errors.customerPhone?'#ef4444':undefined}} maxLength={15}/></div></F>
                 <F label='Email Address' err={errors.customerEmail}><div className='field-wrap'><span className='field-icon'><Mail size={15}/></span><input type='email' value={customerEmail} onChange={e=>{setCustomerEmail(e.target.value);if(errors.customerEmail)setErrors({...errors,customerEmail:''});}} placeholder='name@email.com' className='field-input' style={{borderColor:errors.customerEmail?'#ef4444':undefined}}/></div></F>
               </div>
             </div>
