@@ -1,0 +1,5 @@
+◇ injected env (3) from .env // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+Server running on http://localhost:5000
+Connected to SQLite database at ./billing.db
+Default admin user created (username: admin, password: admin123)
+Default superadmin created (username: superadmin, password: superadmin123)

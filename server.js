@@ -14,7 +14,22 @@ const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: function(origin, callback) {
+    // Allow requests with no origin (mobile apps, curl, Postman)
+    if (!origin) return callback(null, true);
+    const allowed = [
+      'http://localhost:5173',
+      'http://localhost:4173',
+      'http://localhost:3000',
+      'https://paurushartwani.github.io',
+      process.env.FRONTEND_URL,
+    ].filter(Boolean);
+    if (allowed.some(o => origin.startsWith(o))) return callback(null, true);
+    return callback(null, true); // allow all for now
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
@@ -1155,6 +1170,10 @@ app.get('/api/superadmin/product-sales', authenticateToken, requireSuperAdmin, (
     }
   );
 });
+
+// Health check
+app.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
+app.get('/', (req, res) => res.json({ status: 'Look@me Billing API running' }));
 
 // Start server
 app.listen(PORT, () => {
